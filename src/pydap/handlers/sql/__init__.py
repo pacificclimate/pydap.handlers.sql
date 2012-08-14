@@ -1,12 +1,59 @@
+"""
+Pydap SQL handler.
+
+This handler allows Pydap to server data from any relational database supported
+by SQLAlchemy. Each dataset is represented by a YAML file that defines the 
+database connection, variables and other associated metadata. Here's a simple
+example:
+
+    database:
+        dsn: 'sqlite:///simple.db'
+        table: test
+
+    dataset:
+        NC_GLOBAL:
+            history: Created by the Pydap SQL handler
+
+        contact: roberto@dealmeida.net
+        name: test_dataset
+        owner: Roberto De Almeida
+        version: 1.0
+        last_modified: !Query 'SELECT time FROM test ORDER BY time DESC LIMIT 1;'
+
+    sequence:
+        name: simple
+        items: !Query 'SELECT COUNT(id) FROM test'
+
+    _id:
+        col: id
+        long_name: sequence id
+        missing_value: -9999
+
+    lon:
+        col: lon
+        axis: X
+        grads_dim: x
+        long_name: longitude
+        units: degrees_east
+        missing_value: -9999
+        global_range: [-180, 180]
+        valid_range: !Query 'SELECT min(lon), max(lon) FROM test'
+
+"""
 import os
 import itertools
 import re
 import ast
+from datetime import datetime
+import time
+from email.utils import formatdate
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import RowProxy
 import yaml
 
 from pydap.model import *
+from pydap.lib import fix_slice, quote
 from pydap.handlers.lib import BaseHandler
 from pydap.handlers.csv import CSVHandler, CSVSequenceType, CSVBaseType
 from pydap.exceptions import OpenFileError, ConstraintExpressionError
@@ -26,14 +73,24 @@ class SQLHandler(CSVHandler):
         self.filepath = filepath
 
         try:
-            fp = open(filepath, 'Ur')
-            yaml.add_constructor('!Query', yaml_query)
-            self.config = yaml.load(fp)
+            with open(filepath, 'Ur') as fp:
+                fp = open(filepath, 'Ur')
+                self.config = yaml.load(fp)
         except Exception, exc:
             message = 'Unable to open file {filepath}: {exc}'.format(filepath=self.filepath, exc=exc)
             raise OpenFileError(message)
 
-        fp.close()
+        # add last modified from config
+        try:
+            last_modified = self.config['dataset']['last_modified']
+            if isinstance(last_modified, RowProxy):
+                last_modified = last_modified[0]  # !Query
+            if isinstance(last_modified, basestring):
+                last_modified = datetime.strptime(last_modified, '%Y-%m-%d %H:%M:%S')
+            self.additional_headers.append(
+                    ('Last-modified', formatdate( time.mktime( last_modified.timetuple() ) )))
+        except KeyError:
+            pass
 
         #self.additional_headers XXX
 
@@ -42,10 +99,15 @@ class SQLHandler(CSVHandler):
         Parse the constraint expression and return a dataset.
 
         """
-        # create the dataset with a sequence
-        name = os.path.split(self.filepath)[1]
-        dataset = DatasetType(name)  # XXX add attributes
-        seq = dataset['sequence'] = SQLSequenceType('sequence', self.config)
+        # create the dataset 
+        attrs = self.config.get('dataset', {}).copy()
+        name = attrs.pop('name', os.path.split(self.filepath)[1])
+        dataset = DatasetType(name, attrs)
+
+        # and now create the sequence
+        attrs = self.config.get('sequence', {}).copy()
+        name = attrs.pop('name', 'sequence')
+        seq = dataset[quote(name)] = SQLSequenceType(name, self.config, attrs)
 
         # apply selection
         seq.selection.extend(selection)
@@ -59,7 +121,7 @@ class SQLHandler(CSVHandler):
             # `child` instead of `sequence.child`.
             for var in projection:
                 if len(var) == 1 and var[0][0] != seq.name:
-                    token.insert(0, (seq.name, ()))
+                    var.insert(0, (seq.name, ()))
 
             # get all slices and apply the first one, since they should be equal
             slices = [ fix_slice(var[0][1], (None,)) for var in projection ]
@@ -76,7 +138,8 @@ class SQLHandler(CSVHandler):
 
         # add variables
         for col in cols:
-            dataset['sequence'][col] = SQLBaseType(col)
+            attrs = {k : v for k, v in self.config[col].items() if k != 'col'}
+            seq[quote(col)] = SQLBaseType(col, attributes=attrs)
 
         return dataset
 
@@ -276,6 +339,8 @@ def yaml_query(loader, node):
     results = conn.execute(query).fetchone()
     conn.close()
     return results
+
+yaml.add_constructor('!Query', yaml_query)
 
 
 def _test():
