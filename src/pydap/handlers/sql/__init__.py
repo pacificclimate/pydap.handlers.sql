@@ -40,6 +40,7 @@ example:
         valid_range: !Query 'SELECT min(lon), max(lon) FROM test'
 
 """
+import sys
 import os
 import itertools
 import re
