@@ -93,7 +93,16 @@ class SQLHandler(CSVHandler):
         except KeyError:
             pass
 
-        #self.additional_headers XXX
+        # peek cols and types
+        self.cols = (key for key in self.config if 'col' in self.config[key])
+        conn = Engines[self.config['database']['dsn']].connect()
+        query = "SELECT {cols} FROM {table} LIMIT 1".format(
+                cols=', '.join(self.config[key]['col'] for key in self.cols),
+                table=self.config['database']['table'])
+        results = conn.execute(query).fetchone()
+        print results
+        conn.close()
+
 
     def parse(self, projection, selection):
         """
@@ -114,7 +123,7 @@ class SQLHandler(CSVHandler):
         seq.selection.extend(selection)
 
         # by default, return all columns
-        cols = (key for key in self.config if 'col' in self.config[key])
+        cols = self.cols
 
         # apply projection
         if projection:
