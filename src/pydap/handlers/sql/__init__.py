@@ -52,6 +52,7 @@ from email.utils import formatdate
 from sqlalchemy import create_engine
 from sqlalchemy.engine import RowProxy
 import yaml
+import numpy as np
 
 from pydap.model import *
 from pydap.lib import fix_slice, quote
@@ -93,16 +94,15 @@ class SQLHandler(CSVHandler):
         except KeyError:
             pass
 
-        # peek cols and types
-        self.cols = (key for key in self.config if 'col' in self.config[key])
+        # peek types
+        self.cols = tuple(key for key in self.config if 'col' in self.config[key])
         conn = Engines[self.config['database']['dsn']].connect()
         query = "SELECT {cols} FROM {table} LIMIT 1".format(
                 cols=', '.join(self.config[key]['col'] for key in self.cols),
                 table=self.config['database']['table'])
         results = conn.execute(query).fetchone()
-        print results
+        self.dtypes = {col : np.array(value).dtype for col, value in zip(self.cols, results)}
         conn.close()
-
 
     def parse(self, projection, selection):
         """
@@ -149,7 +149,7 @@ class SQLHandler(CSVHandler):
         # add variables
         for col in cols:
             attrs = {k : v for k, v in self.config[col].items() if k != 'col'}
-            seq[quote(col)] = SQLBaseType(col, attributes=attrs)
+            seq[quote(col)] = SQLBaseType(col, dtype=self.dtypes[col], attributes=attrs)
 
         return dataset
 
@@ -263,7 +263,7 @@ class SQLSequenceType(CSVSequenceType):
         # mapping between variable names and their columns
         mapping = {key : self.config[key]['col'] for key in self.config if 'col' in self.config[key]}
 
-        return "SELECT {cols} FROM {table} {where} ORDER BY {order} LIMIT {limit} OFFSET {offset}""".format(
+        return "SELECT {cols} FROM {table} {where} ORDER BY {order} LIMIT {limit} OFFSET {offset}".format(
                 cols=', '.join(self.config[key]['col'] for key in self.keys()),
                 table=self.config['database']['table'],
                 where=parse_queries(self.selection, mapping),
@@ -299,7 +299,24 @@ class SQLSequenceType(CSVSequenceType):
 
 
 class SQLBaseType(CSVBaseType):
-    pass
+    def __init__(self, name, dtype=None, attributes=None, **kwargs):
+        BaseType.__init__(self, name, attributes=attributes, **kwargs)
+        self._dtype = dtype
+
+    @property
+    def dtype(self):
+        if self._dtype is None:
+            peek = self.data.next()
+            self.data = itertools.chain((peek,), self.data)
+            return np.array(peek).dtype
+        else:
+            return self._dtype
+
+    def clone(self):
+        out = self.__class__(self.name, None, self.attributes.copy())
+        out.id = self.id
+        out.sequence_level = self.sequence_level
+        return out
 
 
 def parse_queries(selection, mapping):
