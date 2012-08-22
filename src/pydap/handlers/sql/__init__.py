@@ -70,10 +70,21 @@ Engines = EngineCreator()
 
 
 class SQLHandler(CSVHandler):
+
+    extensions = re.compile(r"^.*\.sql$", re.IGNORECASE)
+
     def __init__(self, filepath):
+        """
+        Prepare dataset.
+
+        The `__init__` method of handlers is responsible for preparing the dataset
+        for incoming requests, which are then done by calling the `parse` method.
+
+        """
         BaseHandler.__init__(self)
         self.filepath = filepath
 
+        # open the YAML file and parse configuration
         try:
             with open(filepath, 'Ur') as fp:
                 fp = open(filepath, 'Ur')
@@ -82,11 +93,11 @@ class SQLHandler(CSVHandler):
             message = 'Unable to open file {filepath}: {exc}'.format(filepath=self.filepath, exc=exc)
             raise OpenFileError(message)
 
-        # add last modified from config
+        # add last-modified header from config, if available
         try:
             last_modified = self.config['dataset']['last_modified']
-            if isinstance(last_modified, RowProxy):
-                last_modified = last_modified[0]  # !Query
+            if isinstance(last_modified, tuple):
+                last_modified = last_modified[0]
             if isinstance(last_modified, basestring):
                 last_modified = datetime.strptime(last_modified, '%Y-%m-%d %H:%M:%S')
             self.additional_headers.append(
@@ -94,7 +105,9 @@ class SQLHandler(CSVHandler):
         except KeyError:
             pass
 
-        # peek types
+        # Peek types. I'm trying to avoid having the user know about Opendap types,
+        # so they are not specified in the config file. Instead, we request a single
+        # row of data to inspect the data types.
         self.cols = tuple(key for key in self.config if 'col' in self.config[key])
         conn = Engines[self.config['database']['dsn']].connect()
         query = "SELECT {cols} FROM {table} LIMIT 1".format(
@@ -108,8 +121,17 @@ class SQLHandler(CSVHandler):
         """
         Parse the constraint expression and return a dataset.
 
+        Here, `projection` is a list of requested variables and their slices. Each
+        requested variable is represented by a list of names/slices pairs, eg:
+
+            sequence.a[0:9] => [ ('sequence', ()), ('a', slice(0, 10)) ]
+
+        The `selection` is a list of relational conditions:
+
+            sequence.a>10&sequence.b<0 => ['sequence.a>10', 'sequence.b<0']
+
         """
-        # create the dataset 
+        # create the dataset, adding attributes from the config file
         attrs = self.config.get('dataset', {}).copy()
         name = attrs.pop('name', os.path.split(self.filepath)[1])
         dataset = DatasetType(name, attrs)
@@ -258,15 +280,16 @@ class SQLSequenceType(CSVSequenceType):
         self.slice = (slice(None),)
         self.sequence_level = 1
 
+        # mapping between variable names and their columns
+        self.mapping = {key : self.config[key]['col'] for key in self.config if 'col' in self.config[key]}
+
     @property
     def query(self):
-        # mapping between variable names and their columns
-        mapping = {key : self.config[key]['col'] for key in self.config if 'col' in self.config[key]}
 
         return "SELECT {cols} FROM {table} {where} ORDER BY {order} LIMIT {limit} OFFSET {offset}".format(
                 cols=', '.join(self.config[key]['col'] for key in self.keys()),
                 table=self.config['database']['table'],
-                where=parse_queries(self.selection, mapping),
+                where=parse_queries(self.selection, self.mapping),
                 order=self.config['database'].get('order', 'id'),
                 limit=(self.slice[0].stop or sys.maxint)-(self.slice[0].start or 0),
                 offset=self.slice[0].start or 0)
@@ -300,11 +323,15 @@ class SQLSequenceType(CSVSequenceType):
 
 class SQLBaseType(CSVBaseType):
     def __init__(self, name, dtype=None, attributes=None, **kwargs):
-        BaseType.__init__(self, name, attributes=attributes, **kwargs)
+        BaseType.__init__(self, name, data=None, dimensions=None, attributes=attributes, **kwargs)
         self._dtype = dtype
 
     @property
     def dtype(self):
+        """
+        Peek dtype from the first value, if it's not set.
+
+        """
         if self._dtype is None:
             peek = self.data.next()
             self.data = itertools.chain((peek,), self.data)
@@ -313,13 +340,17 @@ class SQLBaseType(CSVBaseType):
             return self._dtype
 
     def clone(self):
-        out = self.__class__(self.name, None, self.attributes.copy())
+        out = self.__class__(self.name, self._dtype, self.attributes.copy())
         out.id = self.id
         out.sequence_level = self.sequence_level
         return out
 
 
 def parse_queries(selection, mapping):
+    """
+    Convert an Opendap selection to an SQL query.
+
+    """
     out = []
     for expression in selection:
         id1, op, id2 = re.split('(<=|>=|!=|=~|>|<|=)', expression, 1)
@@ -350,6 +381,13 @@ def parse_queries(selection, mapping):
 
 
 def yaml_query(loader, node):
+    """
+    Special loader for database queries.
+
+    This is a special loader for parsing the YAML config file. The configuration
+    allows queries to be embedded in the file using the `!Query` identifier.
+
+    """
     # read DSN
     for obj in [obj for obj in loader.constructed_objects if isinstance(obj, yaml.MappingNode)]:
         try:
@@ -365,7 +403,7 @@ def yaml_query(loader, node):
     query = loader.construct_scalar(node)
     results = conn.execute(query).fetchone()
     conn.close()
-    return results
+    return tuple(results)
 
 yaml.add_constructor('!Query', yaml_query)
 
