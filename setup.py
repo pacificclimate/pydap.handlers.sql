@@ -33,8 +33,8 @@ setup(name='pydap.handlers.sql',
     include_package_data=True,
     zip_safe=False,
     install_requires=install_requires,
-    entry_points={
-        'console_scripts':
-            ['pydap.handlers.sql=pydap.handlers.sql:main']
-    }
+    entry_points="""
+        [pydap.handler]
+        sql = pydap.handlers.sql:SQLHandler
+    """,
 )
