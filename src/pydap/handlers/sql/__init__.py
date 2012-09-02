@@ -285,12 +285,16 @@ class SQLSequenceType(CSVSequenceType):
 
     @property
     def query(self):
+        if 'order' in self.config['database']:
+            order = 'ORDER BY {order}'.format(**self.config['database'])
+        else:
+            order = ''
 
-        return "SELECT {cols} FROM {table} {where} ORDER BY {order} LIMIT {limit} OFFSET {offset}".format(
+        return "SELECT {cols} FROM {table} {where} {order} LIMIT {limit} OFFSET {offset}".format(
                 cols=', '.join(self.config[key]['col'] for key in self.keys()),
                 table=self.config['database']['table'],
                 where=parse_queries(self.selection, self.mapping),
-                order=self.config['database'].get('order', 'id'),
+                order=order,
                 limit=(self.slice[0].stop or sys.maxint)-(self.slice[0].start or 0),
                 offset=self.slice[0].start or 0)
 
