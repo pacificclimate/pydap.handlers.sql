@@ -424,4 +424,6 @@ if __name__ == "__main__":
     _test()
 
     application = SQLHandler(sys.argv[1])
+    from pydap.wsgi.ssf import ServerSideFunctions
+    application = ServerSideFunctions(application)
     serve(application, port=8001)
