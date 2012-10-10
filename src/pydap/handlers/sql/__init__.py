@@ -50,7 +50,6 @@ import time
 from email.utils import formatdate
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import RowProxy
 import yaml
 import numpy as np
 
