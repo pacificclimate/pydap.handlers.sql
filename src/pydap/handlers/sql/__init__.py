@@ -77,24 +77,23 @@ class SQLHandler(CSVHandler):
         Prepare dataset.
 
         The `__init__` method of handlers is responsible for preparing the dataset
-        for incoming requests, which are then done by calling the `parse` method.
+        for incoming requests.
 
         """
         BaseHandler.__init__(self)
-        self.filepath = filepath
 
         # open the YAML file and parse configuration
         try:
             with open(filepath, 'Ur') as fp:
                 fp = open(filepath, 'Ur')
-                self.config = yaml.load(fp)
+                config = yaml.load(fp)
         except Exception, exc:
-            message = 'Unable to open file {filepath}: {exc}'.format(filepath=self.filepath, exc=exc)
+            message = 'Unable to open file {filepath}: {exc}'.format(filepath=filepath, exc=exc)
             raise OpenFileError(message)
 
         # add last-modified header from config, if available
         try:
-            last_modified = self.config['dataset']['last_modified']
+            last_modified = config['dataset']['last_modified']
             if isinstance(last_modified, tuple):
                 last_modified = last_modified[0]
             if isinstance(last_modified, basestring):
@@ -107,72 +106,30 @@ class SQLHandler(CSVHandler):
         # Peek types. I'm trying to avoid having the user know about Opendap types,
         # so they are not specified in the config file. Instead, we request a single
         # row of data to inspect the data types.
-        self.cols = tuple(key for key in self.config if 'col' in self.config[key])
-        conn = Engines[self.config['database']['dsn']].connect()
+        cols = tuple(key for key in config if 'col' in config[key])
+        conn = Engines[config['database']['dsn']].connect()
         query = "SELECT {cols} FROM {table} LIMIT 1".format(
-                cols=', '.join(self.config[key]['col'] for key in self.cols),
-                table=self.config['database']['table'])
+                cols=', '.join(config[key]['col'] for key in cols),
+                table=config['database']['table'])
         results = conn.execute(query).fetchone()
-        self.dtypes = {col : np.array(value).dtype for col, value in zip(self.cols, results)}
+        dtypes = {col : np.array(value).dtype for col, value in zip(cols, results)}
         conn.close()
 
-    def parse(self, projection, selection):
-        """
-        Parse the constraint expression and return a dataset.
-
-        Here, `projection` is a list of requested variables and their slices. Each
-        requested variable is represented by a list of names/slices pairs, eg:
-
-            sequence.a[0:9] => [ ('sequence', ()), ('a', slice(0, 10)) ]
-
-        The `selection` is a list of relational conditions:
-
-            sequence.a>10&sequence.b<0 => ['sequence.a>10', 'sequence.b<0']
-
-        """
         # create the dataset, adding attributes from the config file
-        attrs = self.config.get('dataset', {}).copy()
-        name = attrs.pop('name', os.path.split(self.filepath)[1])
-        dataset = DatasetType(name, attrs)
+        attrs = config.get('dataset', {}).copy()
+        name = attrs.pop('name', os.path.split(filepath)[1])
+        self.dataset = DatasetType(name, attrs)
 
         # and now create the sequence
-        attrs = self.config.get('sequence', {}).copy()
+        attrs = config.get('sequence', {}).copy()
         name = attrs.pop('name', 'sequence')
-        seq = dataset[quote(name)] = SQLSequenceType(name, self.config, attrs)
+        seq = self.dataset[quote(name)] = SequenceType(name, config, attrs)
+        for var in cols:
+            attrs = {k : v for k, v in config[var].items() if k != 'col'}
+            seq[var] = BaseType(var, attrs)
 
-        # apply selection
-        seq.selection.extend(selection)
-
-        # by default, return all columns
-        cols = self.cols
-
-        # apply projection
-        if projection:
-            # fix shorthand notation in projection; some clients will request
-            # `child` instead of `sequence.child`.
-            for var in projection:
-                if len(var) == 1 and var[0][0] != seq.name:
-                    var.insert(0, (seq.name, ()))
-
-            # get all slices and apply the first one, since they should be equal
-            slices = [ fix_slice(var[0][1], (None,)) for var in projection ]
-            seq.slice = slices[0]
-
-            # check that all slices are equal
-            if any(slice_ != seq.slice for slice_ in slices[1:]):
-                raise ConstraintExpressionError('Slices are not unique!')
-
-            # if the sequence has not been directly requested, return only
-            # those variables that were requested
-            if all(len(var) == 2 for var in projection):
-                cols = [ var[1][0] for var in projection ]
-
-        # add variables
-        for col in cols:
-            attrs = {k : v for k, v in self.config[col].items() if k != 'col'}
-            seq[quote(col)] = SQLBaseType(col, dtype=self.dtypes[col], attributes=attrs)
-
-        return dataset
+        # set the data
+        seq.data = SQLData(config, seq.id, tuple(cols))
 
 
 class SQLSequenceType(CSVSequenceType):
