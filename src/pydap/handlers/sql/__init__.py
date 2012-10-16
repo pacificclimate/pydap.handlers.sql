@@ -55,7 +55,7 @@ import yaml
 import numpy as np
 
 from pydap.model import *
-from pydap.lib import fix_slice, quote
+from pydap.lib import quote
 from pydap.handlers.lib import BaseHandler
 from pydap.exceptions import OpenFileError, ConstraintExpressionError
 from pydap.handlers.csv import CSVData
