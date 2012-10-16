@@ -48,6 +48,7 @@ import ast
 from datetime import datetime
 import time
 from email.utils import formatdate
+import operator
 
 from sqlalchemy import create_engine
 import yaml
@@ -56,8 +57,8 @@ import numpy as np
 from pydap.model import *
 from pydap.lib import fix_slice, quote
 from pydap.handlers.lib import BaseHandler
-from pydap.handlers.csv import CSVHandler, CSVSequenceType, CSVBaseType
 from pydap.exceptions import OpenFileError, ConstraintExpressionError
+from pydap.handlers.csv import CSVData
 
 
 # module level engines, using connection pool
@@ -68,7 +69,7 @@ class EngineCreator(dict):
 Engines = EngineCreator()
 
 
-class SQLHandler(CSVHandler):
+class SQLHandler(BaseHandler):
 
     extensions = re.compile(r"^.*\.sql$", re.IGNORECASE)
 
@@ -129,12 +130,12 @@ class SQLHandler(CSVHandler):
             seq[var] = BaseType(var, attrs)
 
         # set the data
-        seq.data = SQLData(config, seq.id, tuple(cols))
+        seq.data = SQLData(config, seq.id, tuple(cols), dtypes)
 
 
-class SQLSequenceType(CSVSequenceType):
+class SQLData(CSVData):
     """
-    A `SequenceType` that reads data from an SQL database.
+    Emulate a Numpy structured array using an SQL database.
 
     Here's a standard dataset for testing sequential data:
 
@@ -163,10 +164,12 @@ class SQLSequenceType(CSVSequenceType):
         ...     'temperature': { 'col': 'temperature' },
         ...     'site': { 'col': 'site' }}
 
-        >>> seq = SQLSequenceType('example', config)
-        >>> seq['index'] = SQLBaseType('index')
-        >>> seq['temperature'] = SQLBaseType('temperature')
-        >>> seq['site'] = SQLBaseType('site')
+        >>> seq = SequenceType('example')
+        >>> seq['index'] = BaseType('index')
+        >>> seq['temperature'] = BaseType('temperature')
+        >>> seq['site'] = BaseType('site')
+        >>> seq.data = SQLData(config, seq.id, ('index', 'temperature', 'site'),
+        ...     {'index': np.int32, 'temperature': np.float32, 'site': np.dtype('|S14')})
 
         >>> for line in seq:
         ...     print line
@@ -229,15 +232,20 @@ class SQLSequenceType(CSVSequenceType):
         Kodiak_Trail
 
     """
-    def __init__(self, name, config, attributes=None, **kwargs):
-        StructureType.__init__(self, name, attributes, **kwargs)
+    def __init__(self, config, id, cols, dtypes, selection=None, slice_=None):
         self.config = config
-        self.selection = []
-        self.slice = (slice(None),)
-        self.sequence_level = 1
+        self.id = id
+        self.cols = cols
+        self.dtypes = dtypes
+        self.selection = selection or []
+        self.slice = slice_ or (slice(None),)
 
         # mapping between variable names and their columns
-        self.mapping = {key : self.config[key]['col'] for key in self.config if 'col' in self.config[key]}
+        self.mapping = {key : config[key]['col'] for key in config if 'col' in config[key]}
+
+    @property
+    def dtype(self):
+        return self.dtypes[self.cols]
 
     @property
     def query(self):
@@ -246,8 +254,13 @@ class SQLSequenceType(CSVSequenceType):
         else:
             order = ''
 
+        if isinstance(self.cols, tuple):
+            cols = self.cols
+        else:
+            cols = (self.cols,)
+
         return "SELECT {cols} FROM {table} {where} {order} LIMIT {limit} OFFSET {offset}".format(
-                cols=', '.join(self.config[key]['col'] for key in self.keys()),
+                cols=', '.join(self.config[key]['col'] for key in cols),
                 table=self.config['database']['table'],
                 where=parse_queries(self.selection, self.mapping),
                 order=order,
@@ -262,48 +275,18 @@ class SQLSequenceType(CSVSequenceType):
         # SQL, so we need to filter it on Python side
         data = itertools.islice(data, 0, None, self.slice[0].step)
 
+        # return data from a children BaseType, not a Sequence
+        if not isinstance(self.cols, tuple):
+            data = itertools.imap(operator.itemgetter(0), data)
+
         for row in data:
             yield row
 
         conn.close()
 
     def clone(self):
-        out = self.__class__(self.name, self.config, self.attributes.copy())
-        out.id = self.id
-        out.sequence_level = self.sequence_level
-
-        out.selection = self.selection[:]
-
-        # Clone children too.
-        for child in self.children():
-            out[child.name] = child.clone()
-
-        return out
-
-
-class SQLBaseType(CSVBaseType):
-    def __init__(self, name, dtype=None, attributes=None, **kwargs):
-        BaseType.__init__(self, name, data=None, dimensions=None, attributes=attributes, **kwargs)
-        self._dtype = dtype
-
-    @property
-    def dtype(self):
-        """
-        Peek dtype from the first value, if it's not set.
-
-        """
-        if self._dtype is None:
-            peek = self.data.next()
-            self.data = itertools.chain((peek,), self.data)
-            return np.array(peek).dtype
-        else:
-            return self._dtype
-
-    def clone(self):
-        out = self.__class__(self.name, self._dtype, self.attributes.copy())
-        out.id = self.id
-        out.sequence_level = self.sequence_level
-        return out
+        return self.__class__(self.config, self.id, self.cols[:],
+                self.dtypes, self.selection[:], self.slice[:])
 
 
 def parse_queries(selection, mapping):
