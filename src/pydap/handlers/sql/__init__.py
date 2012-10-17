@@ -127,7 +127,7 @@ class SQLHandler(BaseHandler):
         seq = self.dataset[quote(name)] = SequenceType(name, config, attrs)
         for var in cols:
             attrs = {k : v for k, v in config[var].items() if k != 'col'}
-            seq[var] = BaseType(var, attrs)
+            seq[var] = BaseType(var, attributes=attrs)
 
         # set the data
         seq.data = SQLData(config, seq.id, tuple(cols), dtypes)
