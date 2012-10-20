@@ -313,6 +313,8 @@ def parse_queries(selection, mapping):
             b = mapping[name2]
         else:
             b = ast.literal_eval(name2)
+            if isinstance(b, basestring):
+                b = "'%s'" % b
 
         out.append('({} {} {})'.format(a, op, b))
 
