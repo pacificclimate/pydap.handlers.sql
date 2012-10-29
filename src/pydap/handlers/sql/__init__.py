@@ -312,7 +312,7 @@ def parse_queries(selection, mapping):
         if name2 in mapping:
             b = mapping[name2]
         else:
-            b = ast.literal_eval(name2)
+            b = ast.literal_eval(id2)
             if isinstance(b, basestring):
                 b = "'%s'" % b
 
