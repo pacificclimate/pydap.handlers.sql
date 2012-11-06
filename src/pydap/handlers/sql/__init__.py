@@ -259,17 +259,24 @@ class SQLData(CSVData):
         else:
             cols = (self.cols,)
 
-        return "SELECT {cols} FROM {table} {where} {order} LIMIT {limit} OFFSET {offset}".format(
+        where, params = parse_queries(self.selection, self.mapping)
+        if where:
+            where = 'WHERE {conditions}'.format(conditions=' AND '.join(where))
+        else:
+            where = ''
+
+        sql = "SELECT {cols} FROM {table} {where} {order} LIMIT {limit} OFFSET {offset}".format(
                 cols=', '.join(self.config[key]['col'] for key in cols),
                 table=self.config['database']['table'],
-                where=parse_queries(self.selection, self.mapping),
-                order=order,
+                where=where, order=order,
                 limit=(self.slice[0].stop or sys.maxint)-(self.slice[0].start or 0),
                 offset=self.slice[0].start or 0)
 
+        return sql, params
+
     def __iter__(self):
         conn = Engines[self.config['database']['dsn']].connect()
-        data = conn.execute(self.query)
+        data = conn.execute(*self.query)
 
         # there's no standard way of choosing every n result from a query using 
         # SQL, so we need to filter it on Python side
@@ -295,6 +302,7 @@ def parse_queries(selection, mapping):
 
     """
     out = []
+    params = []
     for expression in selection:
         id1, op, id2 = re.split('(<=|>=|!=|=~|>|<|=)', expression, 1)
 
@@ -313,16 +321,11 @@ def parse_queries(selection, mapping):
             b = mapping[name2]
         else:
             b = ast.literal_eval(id2)
-            if isinstance(b, basestring):
-                b = "'%s'" % b
 
-        out.append('({} {} {})'.format(a, op, b))
+        out.append('({a} {op} %s)'.format(a=a, op=op))
+        params.append(b)
 
-    condition = ' AND '.join(out)
-    if condition:
-        condition = 'WHERE {}'.format(condition)
-
-    return condition
+    return out, tuple(params)
 
 
 def yaml_query(loader, node):
