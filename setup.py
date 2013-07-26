@@ -6,7 +6,7 @@ README = open(os.path.join(here, 'README.rst')).read()
 NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '0.5rc1'
+version = '0.5rc2'
 
 install_requires = [
     # List your project dependencies here.
@@ -37,7 +37,7 @@ setup(name='pydap.handlers.sql',
     include_package_data=True,
     zip_safe=False,
     install_requires=install_requires,
-    dependency_links = ['hg+ssh://medusa.pcic.uvic.ca/home/data/projects/comp_support/Pydap-3.2@eb228573139c/#egg=Pydap-3.2.1dev'],
+    dependency_links = ['hg+ssh://medusa.pcic.uvic.ca//home/data/projects/comp_support/software/Pydap-3.2@eb228573139c#egg=Pydap-3.2.1dev'],
     entry_points="""
         [pydap.handler]
         sql = pydap.handlers.sql:SQLHandler
