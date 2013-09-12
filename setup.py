@@ -12,10 +12,11 @@ install_requires = [
     'PyYAML',
     'SQLAlchemy',
     'numpy',
-    'Pydap ==3.2.1',
-    'pydap.handlers.csv ==0.3'
+    'Pydap >=3.2.1',
+    'pydap.handlers.csv >=0.3'
 ]
 
+sw_path = 'hg+ssh://medusa.pcic.uvic.ca//home/data/projects/comp_support/software'
 
 setup(name='pydap.handlers.sql',
     version=version,
@@ -35,8 +36,8 @@ setup(name='pydap.handlers.sql',
     include_package_data=True,
     zip_safe=False,
     install_requires=install_requires,
-    dependency_links = ['hg+ssh://medusa.pcic.uvic.ca//home/data/projects/comp_support/software/Pydap-3.2@3.2.1#egg=Pydap-3.2.1',
-                        'hg+ssh://medusa.pcic.uvic.ca//home/data/projects/comp_support/software/pydap.handlers.csv@2ccf8be6114b#egg=pydap.handlers.csv-0.3dev'],
+    dependency_links = ['{0}/Pydap-3.2@3.2.1#egg=Pydap-3.2.1'.format(sw_path),
+                        '{0}/pydap.handlers.csv@a812c6f4cf7a#egg=pydap.handlers.csv-0.3'.format(sw_path)],
     entry_points="""
         [pydap.handler]
         sql = pydap.handlers.sql:SQLHandler
