@@ -113,7 +113,11 @@ class SQLHandler(BaseHandler):
                 cols=', '.join(config[key]['col'] for key in cols),
                 table=config['database']['table'])
         results = conn.execute(query).fetchone()
-        dtypes = {col : np.dtype('datetime64') if type(value) == datetime else np.array(value).dtype for col, value in zip(cols, results)}
+        if results:
+            dtypes = {col : np.dtype('datetime64') if type(value) == datetime else np.array(value).dtype for col, value in zip(cols, results)}
+        else:
+            dtypes = {}
+
         conn.close()
 
         # create the dataset, adding attributes from the config file
