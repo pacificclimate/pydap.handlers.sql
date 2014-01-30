@@ -281,7 +281,9 @@ class SQLData(CSVData):
     def __len__(self):
         conn = Engines[self.config['database']['dsn']].connect()
         data = conn.execute(*self.query)
-        return data.rowcount
+        rv = data.rowcount
+        conn.close()
+        return rv
         
     def __iter__(self):
         conn = Engines[self.config['database']['dsn']].connect()
