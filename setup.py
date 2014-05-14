@@ -5,7 +5,6 @@ here = os.path.abspath(os.path.dirname(__file__))
 README = open(os.path.join(here, 'README.rst')).read()
 NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
-
 version = '0.7'
 
 install_requires = [
@@ -15,8 +14,6 @@ install_requires = [
     'Pydap >=3.2.1',
     'pydap.handlers.csv >=0.3'
 ]
-
-sw_path = 'hg+ssh://medusa.pcic.uvic.ca//home/data/projects/comp_support/software'
 
 setup(name='pydap.handlers.sql',
     version=version,
@@ -36,8 +33,8 @@ setup(name='pydap.handlers.sql',
     include_package_data=True,
     zip_safe=False,
     install_requires=install_requires,
-    dependency_links = ['{0}/Pydap-3.2@3.2.1#egg=Pydap-3.2.1'.format(sw_path),
-                        '{0}/pydap.handlers.csv@a812c6f4cf7a#egg=pydap.handlers.csv-0.3'.format(sw_path)],
+    dependency_links = ['https://github.com/pacificclimate/pydap-pdp/tarball/master#egg=Pydap-3.2.2',
+                        'https://github.com/pacificclimate/pydap.handlers.csv/tarball/master#egg=pydap.handlers.csv-0.3'],
     entry_points="""
         [pydap.handler]
         sql = pydap.handlers.sql:SQLHandler
