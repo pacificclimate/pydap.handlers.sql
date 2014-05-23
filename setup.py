@@ -11,7 +11,7 @@ install_requires = [
     'PyYAML',
     'SQLAlchemy',
     'numpy',
-    'Pydap >=3.2.1',
+    'pydap_pdp >=3.2.1',
     'pydap.handlers.csv >=0.3'
 ]
 
@@ -33,8 +33,6 @@ setup(name='pydap.handlers.sql',
     include_package_data=True,
     zip_safe=False,
     install_requires=install_requires,
-    dependency_links = ['https://github.com/pacificclimate/pydap-pdp/tarball/master#egg=Pydap-3.2.2',
-                        'https://github.com/pacificclimate/pydap.handlers.csv/tarball/master#egg=pydap.handlers.csv-0.3'],
     entry_points="""
         [pydap.handler]
         sql = pydap.handlers.sql:SQLHandler
