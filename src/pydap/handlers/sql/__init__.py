@@ -49,8 +49,10 @@ from datetime import datetime
 import time
 from email.utils import formatdate
 import operator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 import yaml
 import numpy as np
 
@@ -67,6 +69,21 @@ class EngineCreator(dict):
         self[key] = create_engine(key)
         return self[key]
 Engines = EngineCreator()
+
+# From http://docs.sqlalchemy.org/en/rel_0_9/orm/session.html#session-faq-whentocreate
+@contextmanager
+def session_scope(dsn):
+    '''Provide a transactional scope around a series of operations. Cleans up the connection even in the case of failure'''
+    factory = sessionmaker(bind=Engines[dsn])
+    session = factory()
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 class SQLHandler(BaseHandler):
@@ -108,17 +125,15 @@ class SQLHandler(BaseHandler):
         # so they are not specified in the config file. Instead, we request a single
         # row of data to inspect the data types.
         cols = tuple(key for key in config if 'col' in config[key])
-        conn = Engines[config['database']['dsn']].connect()
-        query = "SELECT {cols} FROM {table} LIMIT 1".format(
-                cols=', '.join(config[key]['col'] for key in cols),
-                table=config['database']['table'])
-        results = conn.execute(query).fetchone()
+        with session_scope(config['database']['dsn']) as conn:
+            query = "SELECT {cols} FROM {table} LIMIT 1".format(
+                     cols=', '.join(config[key]['col'] for key in cols),
+                     table=config['database']['table'])
+            results = conn.execute(query).fetchone()
         if results:
             dtypes = {col : np.dtype('datetime64') if type(value) == datetime else np.array(value).dtype for col, value in zip(cols, results)}
         else:
             dtypes = {}
-
-        conn.close()
 
         # create the dataset, adding attributes from the config file
         attrs = config.get('dataset', {}).copy()
@@ -279,15 +294,14 @@ class SQLData(CSVData):
         return sql, params
 
     def __len__(self):
-        conn = Engines[self.config['database']['dsn']].connect()
-        data = conn.execute(*self.query)
-        rv = data.rowcount
-        conn.close()
+        with session_scope(self.config['database']['dsn']) as conn:
+            data = conn.execute(*self.query)
+            rv = data.rowcount
         return rv
         
     def __iter__(self):
-        conn = Engines[self.config['database']['dsn']].connect()
-        data = conn.execute(*self.query)
+        with session_scope(self.config['database']['dsn']) as conn:
+            data = conn.execute(*self.query)
 
         # there's no standard way of choosing every n result from a query using 
         # SQL, so we need to filter it on Python side
@@ -357,11 +371,10 @@ def yaml_query(loader, node):
             pass
 
     # get/set connection
-    conn = Engines[dsn].connect()
+    with session_scope(dsn) as conn:
+        query = loader.construct_scalar(node)
+        results = conn.execute(query).fetchone()
 
-    query = loader.construct_scalar(node)
-    results = conn.execute(query).fetchone()
-    conn.close()
     return tuple(results)
 
 yaml.add_constructor('!Query', yaml_query)
