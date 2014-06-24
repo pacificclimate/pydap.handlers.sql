@@ -124,16 +124,27 @@ class SQLHandler(BaseHandler):
         # Peek types. I'm trying to avoid having the user know about Opendap types,
         # so they are not specified in the config file. Instead, we request a single
         # row of data to inspect the data types.
+        # FIXME: type peeking does not work if there are NA values in the sequence!!!
         cols = tuple(key for key in config if 'col' in config[key])
         with session_scope(config['database']['dsn']) as conn:
             query = "SELECT {cols} FROM {table} LIMIT 1".format(
                      cols=', '.join(config[key]['col'] for key in cols),
                      table=config['database']['table'])
-            results = conn.execute(query).fetchone()
+            results = conn.execute(query)
+            first_row = results.fetchone()
+
+        dtypes = {}
         if results:
-            dtypes = {col : np.dtype('datetime64') if type(value) == datetime else np.array(value).dtype for col, value in zip(cols, results)}
-        else:
-            dtypes = {}
+            for col, value, description in zip(cols, first_row, results.cursor.description):
+                # FIXME: This is fraaaagile, and depends on internal, undocumented behaviour from SQLAlchemy
+                if not value:
+                    # the value is NULL... try to use the typecode
+                    dtypes[col] = {700: np.dtype('float64'), 1114: np.dtype('datetime64')}[description.type_code]
+                elif type(value) == datetime:
+                    dtypes[col] = np.dtype('datetime64')
+                else:
+                    dtypes[col] = np.array(value).dtype
+                
 
         # create the dataset, adding attributes from the config file
         attrs = config.get('dataset', {}).copy()
@@ -291,7 +302,10 @@ class SQLData(CSVData):
                 limit=(self.slice[0].stop or sys.maxint)-(self.slice[0].start or 0),
                 offset=self.slice[0].start or 0)
 
-        return sql, params
+        if params:
+            return [sql, params]
+        else:
+            return [sql]
 
     def __len__(self):
         with session_scope(self.config['database']['dsn']) as conn:
@@ -327,7 +341,7 @@ def parse_queries(selection, mapping):
 
     """
     out = []
-    params = []
+    params = {}
     for expression in selection:
         id1, op, id2 = re.split('(<=|>=|!=|=~|>|<|=)', expression, 1)
 
@@ -347,10 +361,10 @@ def parse_queries(selection, mapping):
         else:
             b = ast.literal_eval(id2)
 
-        out.append('({a} {op} %s)'.format(a=a, op=op))
-        params.append(b)
+        out.append('({a} {op} :{a})'.format(a=a, op=op))
+        params[a] = b
 
-    return out, tuple(params)
+    return out, params
 
 
 def yaml_query(loader, node):
