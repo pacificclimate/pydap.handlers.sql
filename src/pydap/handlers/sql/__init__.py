@@ -134,7 +134,7 @@ class SQLHandler(BaseHandler):
             first_row = results.fetchone()
 
         dtypes = {}
-        if results:
+        if results.rowcount > 0:
             for col, value, description in zip(cols, first_row, results.cursor.description):
                 # FIXME: This is fraaaagile, and depends on internal, undocumented behaviour from SQLAlchemy
                 if not value:
