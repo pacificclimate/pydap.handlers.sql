@@ -342,7 +342,7 @@ def parse_queries(selection, mapping):
     """
     out = []
     params = {}
-    for expression in selection:
+    for i, expression in enumerate(selection):
         id1, op, id2 = re.split('(<=|>=|!=|=~|>|<|=)', expression, 1)
 
         # a should be a variable in the children
@@ -361,8 +361,8 @@ def parse_queries(selection, mapping):
         else:
             b = ast.literal_eval(id2)
 
-        out.append('({a} {op} :{a})'.format(a=a, op=op))
-        params[a] = b
+        out.append('({a} {op} :{i})'.format(a=a, op=op, i=i)) # bad hack for positional args since Session.execute doesn't support them
+        params[str(i)] = b
 
     return out, params
 
