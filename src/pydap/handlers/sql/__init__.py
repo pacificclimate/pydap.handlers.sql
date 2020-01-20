@@ -105,7 +105,7 @@ class SQLHandler(BaseHandler):
             with open(filepath, 'Ur') as fp:
                 fp = open(filepath, 'Ur')
                 config = yaml.load(fp)
-        except Exception, exc:
+        except Exception as exc:
             message = 'Unable to open file {filepath}: {exc}'.format(filepath=filepath, exc=exc)
             raise OpenFileError(message)
 

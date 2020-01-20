@@ -11,8 +11,8 @@ install_requires = [
     'PyYAML',
     'SQLAlchemy',
     'numpy',
-    'pydap_pdp >=3.2.1',
-    'pydap.handlers.csv >=0.3'
+    'Pydap==3.2.2',
+    'pydap.handlers.csv==1.0.0'
 ]
 
 setup(name='pydap.handlers.sql',
@@ -20,7 +20,7 @@ setup(name='pydap.handlers.sql',
     description="An SQL handler for Pydap",
     long_description=README + '\n\n' + NEWS,
     classifiers=[
-      # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+        'Programming Language :: Python :: 3'
     ],
     keywords="sql database opendap dods dap data science climate oceanography meteorology'",
     author='Roberto De Almeida',
